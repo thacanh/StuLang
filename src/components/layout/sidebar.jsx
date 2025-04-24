@@ -1,4 +1,4 @@
-import { Calendar, BookOpen, BookText, UserCircle, Sun, Flame, Bell, Crown, Settings } from "lucide-react"
+import { Calendar, BookOpen, BookText, UserCircle, Sun, Flame, Bell, Crown, Settings, MessageCircle} from "lucide-react"
 import { Link, useLocation } from "react-router-dom"
 
 export default function Sidebar({ userData }) {
@@ -61,6 +61,14 @@ export default function Sidebar({ userData }) {
           >
             <BookText className="w-5 h-5 mr-3" />
             <span className="font-medium">Từ vựng</span>
+          </Link>
+
+          <Link
+            to="/giao-tiep"
+            className={`flex items-center ${location.pathname === "/giao-tiep" ? "text-green-500" : ""}`}
+          >
+            <MessageCircle className="w-5 h-5 mr-3" />
+            <span className="font-medium">Giao tiếp</span>
           </Link>
 
           <Link

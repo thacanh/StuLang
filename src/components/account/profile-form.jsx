@@ -2,9 +2,19 @@
 
 import { Pencil } from "lucide-react"
 import { useState } from "react"
+import { useNavigate } from "react-router-dom"
 
 export default function ProfileForm({ initialName, userId }) {
   const [name, setName] = useState(initialName)
+  const navigate = useNavigate()
+
+  const handleLogout = () => {
+    // Xử lý đăng xuất - xóa token, cookie, state, v.v.
+    console.log("Đang đăng xuất...")
+    
+    // Chuyển hướng người dùng đến trang đăng nhập
+    navigate("/dang-nhap")
+  }
 
   return (
     <div className="p-8">
@@ -56,7 +66,10 @@ export default function ProfileForm({ initialName, userId }) {
 
       <div className="flex justify-between mt-8">
         <button className="border border-green-500 text-green-500 rounded-full px-6 py-2">Phản hồi</button>
-        <button className="border border-red-500 text-red-500 rounded-full px-6 py-2 flex items-center">
+        <button 
+          onClick={handleLogout}
+          className="border border-red-500 text-red-500 rounded-full px-6 py-2 flex items-center"
+        >
           Đăng xuất
           <svg className="ml-2 w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path
@@ -80,4 +93,3 @@ export default function ProfileForm({ initialName, userId }) {
     </div>
   )
 }
-

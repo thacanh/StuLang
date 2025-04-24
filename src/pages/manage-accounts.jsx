@@ -16,10 +16,10 @@ export default function ManageAccountsPage() {
 
   // Sample user data
   const users = [
-    { id: "4251", name: "Nguyễn Thạc Anh", email: "thac.anh@example.com", role: "User", status: "Active" },
+    { id: "4251", name: "Nguyễn Thạc Anh", email: "thacanh04@gmail.com", role: "Admin", status: "Active" },
     { id: "3892", name: "Trần Văn Bình", email: "van.binh@example.com", role: "User", status: "Active" },
     { id: "2781", name: "Lê Thị Cúc", email: "thi.cuc@example.com", role: "User", status: "Inactive" },
-    { id: "1945", name: "Phạm Đức Dũng", email: "duc.dung@example.com", role: "Premium", status: "Active" },
+    { id: "1945", name: "Phạm Đức Dũng", email: "duc.dung@example.com", role: "User", status: "Active" },
   ]
 
   return (
@@ -36,10 +36,10 @@ export default function ManageAccountsPage() {
               <X className="w-5 h-5 mr-1" />
               Quay lại
             </button>
-            <button className="bg-green-500 text-white rounded-md px-4 py-2 flex items-center">
+            {/* <button className="bg-green-500 text-white rounded-md px-4 py-2 flex items-center">
               <UserPlus className="w-5 h-5 mr-2" />
               Thêm người dùng
-            </button>
+            </button> */}
           </div>
         </div>
 
