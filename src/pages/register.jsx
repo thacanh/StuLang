@@ -1,42 +1,76 @@
-"use client"
+// src/pages/register.jsx
+import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Eye, EyeOff, CheckCircle } from "lucide-react";
+import { register } from '../services/api';
 
-import { useState } from "react"
-import { Link, useNavigate } from "react-router-dom"
-import { Eye, EyeOff, CheckCircle } from "lucide-react"
+const RegisterPage = () => {
+  const navigate = useNavigate();
+  const [formData, setFormData] = useState({
+    username: '',
+    password: '',
+    confirmPassword: '',
+    email: ''
+  });
+  const [error, setError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-export default function RegisterPage() {
-  const [name, setName] = useState("")
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [confirmPassword, setConfirmPassword] = useState("")
-  const [showPassword, setShowPassword] = useState(false)
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
-  const navigate = useNavigate()
+  const handleChange = (e) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value
+    });
+  };
 
-  const handleRegister = (e) => {
-    e.preventDefault()
-    
-    // Kiểm tra mật khẩu
-    if (password !== confirmPassword) {
-      alert("Mật khẩu xác nhận không khớp!")
-      return
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+
+    if (formData.password !== formData.confirmPassword) {
+      setError('Mật khẩu xác nhận không khớp');
+      return;
     }
-    
-    // Xử lý đăng ký (thực tế sẽ gọi API)
-    console.log("Đăng ký với:", { name, email, password })
-    
-    // Chuyển hướng sau khi đăng ký thành công
-    navigate("/dang-nhap")
-  }
+
+    setIsLoading(true);
+
+    try {
+      await register(formData.username, formData.password, formData.email);
+      // Hiển thị thông báo thành công
+      alert('Đăng ký thành công! Vui lòng đăng nhập.');
+      navigate('/dang-nhap');
+    } catch (error) {
+      if (error.response) {
+        // Xử lý các loại lỗi phổ biến
+        if (error.response.status === 400) {
+          if (error.response.data.detail.includes('Username already registered')) {
+            setError('Tên đăng nhập đã tồn tại');
+          } else if (error.response.data.detail.includes('Email already registered')) {
+            setError('Email đã được sử dụng');
+          } else {
+            setError(error.response.data.detail || 'Đăng ký thất bại');
+          }
+        } else {
+          setError('Đăng ký thất bại. Vui lòng thử lại sau.');
+        }
+      } else {
+        setError('Không thể kết nối đến máy chủ. Vui lòng thử lại sau.');
+      }
+      console.error('Register error:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const passwordStrength = () => {
-    if (!password) return { level: 0, text: "" }
+    if (!formData.password) return { level: 0, text: "" }
     
-    if (password.length < 6) {
+    if (formData.password.length < 6) {
       return { level: 1, text: "Yếu" }
-    } else if (password.length < 8) {
+    } else if (formData.password.length < 8) {
       return { level: 2, text: "Trung bình" }
-    } else if (password.match(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/)) {
+    } else if (formData.password.match(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/)) {
       return { level: 4, text: "Mạnh" }
     } else {
       return { level: 3, text: "Khá" }
@@ -53,15 +87,22 @@ export default function RegisterPage() {
           <p className="text-gray-500">Tạo tài khoản mới</p>
         </div>
 
-        <form onSubmit={handleRegister}>
+        <form onSubmit={handleSubmit}>
+          {error && (
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+              {error}
+            </div>
+          )}
+
           <div className="mb-6">
-            <label className="block text-sm font-medium mb-2">Họ và tên</label>
+            <label className="block text-sm font-medium mb-2">Tên đăng nhập</label>
             <input
               type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+              name="username"
+              value={formData.username}
+              onChange={handleChange}
               className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
-              placeholder="Nhập họ và tên"
+              placeholder="Nhập tên đăng nhập"
               required
             />
           </div>
@@ -70,8 +111,9 @@ export default function RegisterPage() {
             <label className="block text-sm font-medium mb-2">Email</label>
             <input
               type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              name="email"
+              value={formData.email}
+              onChange={handleChange}
               className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
               placeholder="Nhập email"
               required
@@ -83,8 +125,9 @@ export default function RegisterPage() {
             <div className="relative">
               <input
                 type={showPassword ? "text" : "password"}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                name="password"
+                value={formData.password}
+                onChange={handleChange}
                 className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                 placeholder="Tạo mật khẩu"
                 required
@@ -99,7 +142,7 @@ export default function RegisterPage() {
               </button>
             </div>
             
-            {password && (
+            {formData.password && (
               <div className="mt-2">
                 <div className="flex items-center justify-between mb-1">
                   <span className="text-xs font-medium">Độ mạnh mật khẩu: {strength.text}</span>
@@ -123,8 +166,9 @@ export default function RegisterPage() {
             <div className="relative">
               <input
                 type={showConfirmPassword ? "text" : "password"}
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
+                name="confirmPassword"
+                value={formData.confirmPassword}
+                onChange={handleChange}
                 className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500"
                 placeholder="Nhập lại mật khẩu"
                 required
@@ -138,37 +182,43 @@ export default function RegisterPage() {
               </button>
             </div>
             
-            {confirmPassword && password === confirmPassword && (
+            {formData.confirmPassword && formData.password === formData.confirmPassword && (
               <div className="flex items-center text-green-500 mt-2">
                 <CheckCircle size={16} className="mr-1" />
                 <span className="text-xs">Mật khẩu khớp</span>
               </div>
             )}
             
-            {confirmPassword && password !== confirmPassword && (
+            {formData.confirmPassword && formData.password !== formData.confirmPassword && (
               <div className="text-red-500 text-xs mt-2">
                 Mật khẩu xác nhận không khớp
               </div>
             )}
           </div>
 
-          <button 
+          <button
             type="submit"
-            className="w-full bg-green-500 text-white py-3 rounded-lg font-medium hover:bg-green-600 transition-colors"
+            disabled={isLoading}
+            className="w-full bg-green-500 text-white py-3 rounded-lg font-medium hover:bg-green-600 transition-colors disabled:opacity-50"
           >
-            Đăng ký
+            {isLoading ? 'Đang đăng ký...' : 'Đăng ký'}
           </button>
         </form>
 
         <div className="mt-8 text-center">
           <p className="text-gray-600">
-            Đã có tài khoản? 
-            <Link to="/dang-nhap" className="ml-1 text-green-600 font-medium hover:underline">
+            Đã có tài khoản?{' '}
+            <button
+              onClick={() => navigate('/dang-nhap')}
+              className="text-green-600 font-medium hover:underline"
+            >
               Đăng nhập
-            </Link>
+            </button>
           </p>
         </div>
       </div>
     </div>
-  )
-}
+  );
+};
+
+export default RegisterPage;

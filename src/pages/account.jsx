@@ -13,7 +13,7 @@ export default function AccountPage() {
     <div className="flex min-h-screen bg-[#F5FBFF]">
       <Sidebar userData={userData} />
       <div className="flex-1">
-        <ProfileForm initialName="Nguyễn Thạc Anh" userId="4251" />
+        <ProfileForm initialName="thacanhdepzai@gmail.com" userId="1" />
       </div>
     </div>
   )

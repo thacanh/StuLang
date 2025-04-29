@@ -1,8 +1,29 @@
-import { Calendar, BookOpen, BookText, UserCircle, Sun, Flame, Bell, Crown, Settings, MessageCircle} from "lucide-react"
-import { Link, useLocation } from "react-router-dom"
+import { Calendar, BookOpen, BookText, UserCircle, Sun, Flame, Bell, Crown, Settings, MessageCircle, LogOut } from "lucide-react"
+import { Link, useLocation, useNavigate } from "react-router-dom"
+import { useAuth } from "../../config/AuthContext"
 
-export default function Sidebar({ userData }) {
+export default function Sidebar() {
   const location = useLocation()
+  const navigate = useNavigate()
+  const { user, logout, loading } = useAuth()
+
+  const handleLogout = () => {
+    logout()
+    navigate('/dang-nhap')
+  }
+
+  if (loading) {
+    return (
+      <div className="flex flex-col gap-4 p-4 bg-[#F5FBFF] min-h-screen">
+        <div className="text-4xl font-bold text-green-600 mb-2 px-2 mx-auto w-fit">
+          StuLang
+        </div>
+        <div className="bg-white rounded-xl p-4 shadow-sm animate-pulse">
+          <div className="h-24"></div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-4 p-4 bg-[#F5FBFF] min-h-screen">
@@ -13,30 +34,34 @@ export default function Sidebar({ userData }) {
       <div className="bg-white rounded-xl p-4 shadow-sm">
         <div className="flex items-center gap-3 mb-2">
           <div className="w-10 h-10 rounded-full bg-blue-500 overflow-hidden">
-            {/* <img src="/placeholder.svg?height=40&width=40" alt="Avatar" className="w-full h-full object-cover" /> */}
+            {user?.avatar && (
+              <img src={user.avatar} alt="Avatar" className="w-full h-full object-cover" />
+            )}
           </div>
           <div>
             <div className="text-sm text-gray-500">Xin chào</div>
-            <div className="font-bold">{userData.name}</div>
-            <div className="text-xs text-green-500 font-medium">Admin</div>
+            <div className="font-bold">{user?.username || 'Người dùng'}</div>
+            <div className="text-xs text-green-500 font-medium">
+              {user?.role === 'admin' ? 'Admin' : 'Người dùng'}
+            </div>
           </div>
         </div>
 
         <div className="mb-3">
           <div className="flex items-center text-yellow-500 font-medium">
             <Crown className="w-4 h-4 mr-1" />
-            <span>Bạn đã học: 100 từ</span>
+            <span>Bạn đã học: {user?.learnedWords || 0} từ</span>
           </div>
         </div>
 
         <div className="flex items-center justify-between">
           <div className="flex items-center">
             <Sun className="w-5 h-5 text-yellow-500 mr-1" />
-            <span className="font-bold">20</span>
+            <span className="font-bold">{user?.streakDays || 0}</span>
           </div>
           <div className="flex items-center">
             <Flame className="w-5 h-5 text-black mr-1" />
-            <span className="font-bold">0</span>
+            <span className="font-bold">{user?.points || 0}</span>
           </div>
           <div>
             <Bell className="w-5 h-5 text-black" />
@@ -45,7 +70,7 @@ export default function Sidebar({ userData }) {
       </div>
 
       {/* Navigation Card */}
-      <div className="bg-white rounded-xl p-4 shadow-sm flex-1 max-h-[400px] overflow-y-auto">
+      <div className="bg-white rounded-xl p-4 shadow-sm flex-1 w-[220px] max-h-[400px] overflow-y-auto">
         <nav className="flex flex-col space-y-5">
           <Link
             to="/chu-ky-hoc"
@@ -87,17 +112,26 @@ export default function Sidebar({ userData }) {
             <span className="font-medium">Tài khoản</span>
           </Link>
 
-          {/* New Administrator Section */}
-          <Link
-            to="/quan-tri-vien"
-            className={`flex items-center ${location.pathname.startsWith("/quan-tri-vien") ? "text-green-500" : ""}`}
+          {user?.role === 'admin' && (
+            <Link
+              to="/quan-tri-vien"
+              className={`flex items-center ${location.pathname.startsWith("/quan-tri-vien") ? "text-green-500" : ""}`}
+            >
+              <Settings className="w-5 h-5 mr-3" />
+              <span className="font-medium">Quản trị viên</span>
+            </Link>
+          )}
+          
+          {/* Thêm nút đăng xuất */}
+          <button
+            onClick={handleLogout}
+            className="flex items-center text-red-500 hover:text-red-600 transition-colors mt-auto"
           >
-            <Settings className="w-5 h-5 mr-3" />
-            <span className="font-medium">Quản trị viên</span>
-          </Link>
+            <LogOut className="w-5 h-5 mr-3" />
+            <span className="font-medium">Đăng xuất</span>
+          </button>
         </nav>
       </div>
     </div>
   )
 }
-
