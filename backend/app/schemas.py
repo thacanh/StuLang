@@ -59,11 +59,12 @@ class VocabularyBase(BaseModel):
     word: str
     definition: str
     example: Optional[str] = None
-    level: VocabLevel
+    level: str
     topic: str
     pronunciation: Optional[str] = None
     audio_url: Optional[str] = None
     synonyms: Optional[str] = None
+    part_of_speech: str = 'noun'
 
 class VocabularyCreate(VocabularyBase):
     pass

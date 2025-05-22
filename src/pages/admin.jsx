@@ -1,21 +1,14 @@
 import Sidebar from "../components/layout/sidebar"
-import { UserPlus, BookPlus } from "lucide-react"
+import { UserPlus, BookPlus, BookOpen } from "lucide-react"
 import { Link } from "react-router-dom"
 
 export default function AdminPage() {
-  const userData = {
-    name: "Nguyễn Thạc Anh",
-    wordsLearned: 100,
-    timeLeft: "22:30:01",
-    wordsNeeded: 20,
-  }
-
   const adminOptions = [
     {
-      title: "Thêm từ vựng",
+      title: "Quản lý từ vựng",
       description: "Thêm từ vựng mới vào hệ thống",
       icon: <BookPlus className="w-12 h-12 text-green-500" />,
-      path: "/quan-tri-vien/them-tu-vung",
+      path: "/quan-tri-vien/quan-ly-tu-vung",
     },
     {
       title: "Quản lý tài khoản",
@@ -27,11 +20,11 @@ export default function AdminPage() {
 
   return (
     <div className="flex min-h-screen bg-[#F5FBFF]">
-      <Sidebar userData={userData} />
+      <Sidebar />
       <div className="flex-1 p-6">
         <h1 className="text-2xl font-bold mb-6">Quản trị viên</h1>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           {adminOptions.map((option, index) => (
             <Link to={option.path} key={index}>
               <div className="bg-white rounded-xl p-6 shadow-sm hover:shadow-md transition-shadow flex items-center gap-6">

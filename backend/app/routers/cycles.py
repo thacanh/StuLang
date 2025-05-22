@@ -3,6 +3,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime, timedelta
+from sqlalchemy.orm import joinedload
+from sqlalchemy import func
+
 
 from .. import models, schemas, authentication
 from ..database import get_db

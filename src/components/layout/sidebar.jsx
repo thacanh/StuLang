@@ -1,11 +1,31 @@
 import { Calendar, BookOpen, BookText, UserCircle, Sun, Flame, Bell, Crown, Settings, MessageCircle, LogOut } from "lucide-react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import { useAuth } from "../../config/AuthContext"
+import { useState, useEffect } from "react"
+import LearnedWords from "../vocabulary/learned-words"
+import api from "../../config/api"
 
 export default function Sidebar() {
   const location = useLocation()
   const navigate = useNavigate()
   const { user, logout, loading } = useAuth()
+  const [isLearnedWordsOpen, setIsLearnedWordsOpen] = useState(false)
+  const [learnedWordsCount, setLearnedWordsCount] = useState(0)
+
+  useEffect(() => {
+    if (user) {
+      fetchVocabularyCount()
+    }
+  }, [user])
+
+  const fetchVocabularyCount = async () => {
+    try {
+      const response = await api.get('/users/vocabulary')
+      setLearnedWordsCount(response.data.length)
+    } catch (err) {
+      console.error('Error fetching vocabulary count:', err)
+    }
+  }
 
   const handleLogout = () => {
     logout()
@@ -48,10 +68,13 @@ export default function Sidebar() {
         </div>
 
         <div className="mb-3">
-          <div className="flex items-center text-yellow-500 font-medium">
+          <button 
+            onClick={() => setIsLearnedWordsOpen(true)}
+            className="flex items-center text-yellow-500 font-medium hover:text-yellow-600 transition-colors"
+          >
             <Crown className="w-4 h-4 mr-1" />
-            <span>Bạn đã học: {user?.learnedWords || 0} từ</span>
-          </div>
+            <span>Bạn đã học: {learnedWordsCount} từ</span>
+          </button>
         </div>
 
         <div className="flex items-center justify-between">
@@ -132,6 +155,13 @@ export default function Sidebar() {
           </button>
         </nav>
       </div>
+
+      {/* Learned Words Modal */}
+      <LearnedWords 
+        isOpen={isLearnedWordsOpen} 
+        onClose={() => setIsLearnedWordsOpen(false)}
+        onWordsCountChange={setLearnedWordsCount}
+      />
     </div>
   )
 }

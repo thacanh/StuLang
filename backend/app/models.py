@@ -31,6 +31,11 @@ class Vocabulary(Base):
     pronunciation = Column(String(100))
     audio_url = Column(String(255))
     synonyms = Column(Text)
+    part_of_speech = Column(
+        Enum('noun', 'verb', 'adjective', 'adverb', 'pronoun', 'preposition', 'conjunction', 'interjection'),
+        nullable=False,
+        default='noun'
+    )
 
     # Relationships
     user_vocabularies = relationship("UserVocabulary", back_populates="vocabulary")

@@ -15,6 +15,7 @@ import ManageAccountsPage from "./pages/manage-accounts";
 import FlashcardPage from "./pages/flashcard";
 import LoginPage from "./pages/login";
 import RegisterPage from "./pages/register";
+import ManageVocabularyPage from "./pages/manage-vocabulary";
 
 function App() {
   return (
@@ -73,11 +74,14 @@ function App() {
               <AccountPage />
             </ProtectedRoute>
           } />
-
-          {/* Admin routes - Chỉ admin mới truy cập được */}
           <Route path="/quan-tri-vien" element={
             <ProtectedRoute adminOnly={true}>
               <AdminPage />
+            </ProtectedRoute>
+          } />
+          <Route path="/quan-tri-vien/quan-ly-tu-vung" element={
+            <ProtectedRoute adminOnly={true}>
+              <ManageVocabularyPage />
             </ProtectedRoute>
           } />
           <Route path="/quan-tri-vien/them-tu-vung" element={
