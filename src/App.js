@@ -16,6 +16,7 @@ import FlashcardPage from "./pages/flashcard";
 import LoginPage from "./pages/login";
 import RegisterPage from "./pages/register";
 import ManageVocabularyPage from "./pages/manage-vocabulary";
+import TestPage from "./pages/test"; 
 
 function App() {
   return (
@@ -92,6 +93,12 @@ function App() {
           <Route path="/quan-tri-vien/quan-ly-tai-khoan" element={
             <ProtectedRoute adminOnly={true}>
               <ManageAccountsPage />
+            </ProtectedRoute>
+          } />
+
+          <Route path="/kiem-tra" element={
+            <ProtectedRoute adminOnly={true}>
+              <TestPage />
             </ProtectedRoute>
           } />
 

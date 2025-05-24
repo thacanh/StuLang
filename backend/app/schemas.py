@@ -260,3 +260,36 @@ class VocabularyStatistics(BaseModel):
     
     class Config:
         orm_mode = True
+
+class PaginatedCycleVocabulary(BaseModel):
+    """Schema cho kết quả từ vựng chu kỳ có phân trang"""
+    items: List[CycleVocabulary]
+    total: int
+    page: int
+    pages: int
+    
+    class Config:
+        orm_mode = True
+
+# Trong schemas.py
+class VocabularyQuiz(BaseModel):
+    word_id: int
+    word: str
+    pronunciation: Optional[str] = None
+    example: Optional[str] = None
+    level: str
+    topic: str
+    status: str
+    choices: List[str]
+    correct_answer: int
+    
+    class Config:
+        orm_mode = True
+
+class QuizResult(BaseModel):
+    word_id: int
+    selected_answer: int
+    is_correct: bool
+
+class VocabularyPracticeQuiz(BaseModel):
+    quiz_results: List[QuizResult]

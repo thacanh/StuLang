@@ -188,7 +188,60 @@ export default function ManageVocabularyPage() {
       return
     }
 
-    // Implement search functionality
+    searchVocabulary()
+  }
+
+  const searchVocabulary = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const response = await api.get(`/vocabulary/search?keyword=${encodeURIComponent(searchTerm)}`)
+
+      if (!response.data) {
+        setVocabularyItems([])
+        setTotalItems(0)
+        setTotalPages(1)
+        return
+      }
+
+      // Handle array response
+      if (Array.isArray(response.data)) {
+        setVocabularyItems(response.data)
+        setTotalItems(response.data.length)
+        setTotalPages(Math.ceil(response.data.length / ITEMS_PER_PAGE))
+      } 
+      // Handle paginated response
+      else if (response.data.items && Array.isArray(response.data.items)) {
+        setVocabularyItems(response.data.items)
+        setTotalItems(response.data.total || response.data.items.length)
+        setTotalPages(response.data.pages || Math.ceil(response.data.items.length / ITEMS_PER_PAGE))
+      } 
+      // Handle unexpected response format
+      else {
+        console.error('Invalid search response format:', response.data)
+        setVocabularyItems([])
+        setTotalItems(0)
+        setTotalPages(1)
+      }
+    } catch (err) {
+      console.error('Search error:', {
+        message: err.message,
+        response: err.response?.data,
+        status: err.response?.status
+      })
+
+      if (err.response?.status === 401) {
+        navigate('/login')
+      } else if (err.response?.status === 404) {
+        setVocabularyItems([])
+        setTotalItems(0)
+        setTotalPages(1)
+      } else {
+        setError("Không thể tìm kiếm từ vựng")
+      }
+    } finally {
+      setLoading(false)
+    }
   }
 
   const handlePlayAudio = async (word) => {

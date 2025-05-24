@@ -84,10 +84,10 @@ def create_quick_cycle(
     Tạo chu kỳ học với thời gian do người dùng nhập
     
     Args:
-        days: Số ngày (bắt buộc nhập)
-        hours: Số giờ (bắt buộc nhập)
-        minutes: Số phút (bắt buộc nhập)
-        seconds: Số giây (bắt buộc nhập)
+        days: Số ngày
+        hours: Số giờ
+        minutes: Số phút
+        seconds: Số giây
     """
     # Validate input
     if days < 0 or hours < 0 or minutes < 0 or seconds < 0:
@@ -178,7 +178,8 @@ def get_cycle_time_remaining(
         return {
             "status": "expired",
             "message": "Chu kỳ học đã kết thúc",
-            "expired_since": str(now - cycle.end_datetime)
+            "expired_since": str(now - cycle.end_datetime),
+            "can_add_vocabulary": False
         }
     
     time_remaining = cycle.end_datetime - now
@@ -200,7 +201,38 @@ def get_cycle_time_remaining(
             "total_seconds": int(time_remaining.total_seconds())
         },
         "progress_percentage": int(((now - cycle.start_datetime).total_seconds() / 
-                                  (cycle.end_datetime - cycle.start_datetime).total_seconds()) * 100)
+                                  (cycle.end_datetime - cycle.start_datetime).total_seconds()) * 100),
+        "can_add_vocabulary": True
+    }
+
+@router.get("/statistics")
+def get_cycle_statistics(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(authentication.get_current_active_user)
+):
+    """Thống kê chu kỳ hiện tại"""
+    cycle = db.query(models.UserCycle).filter(
+        models.UserCycle.user_id == current_user.user_id
+    ).first()
+    
+    if not cycle:
+        raise HTTPException(status_code=404, detail="No learning cycle found")
+    
+    # Đếm từ trong cycle (chỉ còn pending)
+    total_in_cycle = db.query(models.CycleVocabulary).filter(
+        models.CycleVocabulary.user_id == current_user.user_id
+    ).count()
+    
+    # Đếm từ đã học (tổng)
+    total_learned = db.query(models.UserVocabulary).filter(
+        models.UserVocabulary.user_id == current_user.user_id
+    ).count()
+    
+    return {
+        "cycle_words_remaining": total_in_cycle,
+        "total_words_learned": total_learned,
+        "cycle_start": cycle.start_datetime,
+        "cycle_end": cycle.end_datetime
     }
 
 @router.post("/vocabulary", response_model=schemas.CycleVocabulary)
@@ -209,6 +241,9 @@ def add_vocabulary_to_cycle(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(authentication.get_current_active_user)
 ):
+    """
+    Thêm từ vựng vào chu kỳ - chỉ khi chu kỳ còn hoạt động
+    """
     # Check if user has an active cycle
     cycle = db.query(models.UserCycle).filter(
         models.UserCycle.user_id == current_user.user_id
@@ -216,6 +251,14 @@ def add_vocabulary_to_cycle(
     
     if not cycle:
         raise HTTPException(status_code=404, detail="No active learning cycle found")
+    
+    # Kiểm tra chu kỳ còn hoạt động không
+    now = datetime.now()
+    if cycle.end_datetime <= now:
+        raise HTTPException(
+            status_code=400, 
+            detail="Cannot add vocabulary to expired cycle. Please create a new cycle."
+        )
     
     # Check if vocabulary exists
     vocabulary = db.query(models.Vocabulary).filter(
@@ -234,6 +277,15 @@ def add_vocabulary_to_cycle(
     if existing:
         raise HTTPException(status_code=400, detail="Vocabulary already in cycle")
     
+    # Check if vocabulary is already learned
+    learned = db.query(models.UserVocabulary).filter(
+        models.UserVocabulary.user_id == current_user.user_id,
+        models.UserVocabulary.word_id == cycle_vocab.word_id
+    ).first()
+    
+    if learned:
+        raise HTTPException(status_code=400, detail="Vocabulary already learned")
+    
     # Add vocabulary to cycle
     db_cycle_vocab = models.CycleVocabulary(
         user_id=current_user.user_id,
@@ -247,13 +299,23 @@ def add_vocabulary_to_cycle(
     
     return db_cycle_vocab
 
-@router.get("/vocabulary", response_model=List[schemas.CycleVocabulary])
+@router.get("/vocabulary", response_model=schemas.PaginatedCycleVocabulary)
 def get_cycle_vocabulary(
-    status: str = None,
+    skip: int = 0,
+    limit: int = 20,
+    status: Optional[str] = None,
+    level: Optional[str] = None,
+    topic: Optional[str] = None,
+    part_of_speech: Optional[str] = None,
+    sort_by: Optional[str] = "word_id",
+    sort_order: Optional[str] = "asc",
     db: Session = Depends(get_db),
     current_user: models.User = Depends(authentication.get_current_active_user)
 ):
-    # Kiểm tra nếu người dùng có chu kỳ học
+    """
+    Lấy danh sách từ vựng trong chu kỳ với phân trang và filter
+    """
+    # Kiểm tra chu kỳ
     cycle = db.query(models.UserCycle).filter(
         models.UserCycle.user_id == current_user.user_id
     ).first()
@@ -261,21 +323,58 @@ def get_cycle_vocabulary(
     if not cycle:
         raise HTTPException(status_code=404, detail="No active learning cycle found")
     
-    # Truy vấn trực tiếp từ vựng trong chu kỳ
-    query = db.query(models.CycleVocabulary).filter(
+    # Xây dựng query cơ bản với JOIN
+    query = db.query(models.CycleVocabulary).join(
+        models.Vocabulary, models.CycleVocabulary.word_id == models.Vocabulary.word_id
+    ).filter(
         models.CycleVocabulary.user_id == current_user.user_id
     )
     
+    # Áp dụng bộ lọc
     if status:
         query = query.filter(models.CycleVocabulary.status == status)
     
-    # Tùy chọn: Tải thêm thông tin vocabulary
-    query = query.options(joinedload(models.CycleVocabulary.vocabulary))
+    if level:
+        query = query.filter(models.Vocabulary.level == level)
     
-    cycle_vocab = query.all()
-    return cycle_vocab
+    if topic:
+        query = query.filter(models.Vocabulary.topic == topic)
+        
+    if part_of_speech:
+        query = query.filter(models.Vocabulary.part_of_speech == part_of_speech)
+    
+    # Đếm tổng số từ vựng thỏa mãn điều kiện (trước khi phân trang)
+    total_count = query.count()
+    
+    # Áp dụng sắp xếp
+    valid_sort_fields = ["word_id", "word", "level", "topic", "status", "part_of_speech"]
+    if sort_by in valid_sort_fields:
+        if sort_by in ["word_id", "word", "level", "topic", "part_of_speech"]:
+            sort_column = getattr(models.Vocabulary, sort_by)
+        elif sort_by == "status":
+            sort_column = getattr(models.CycleVocabulary, sort_by)
+        else:
+            sort_column = models.Vocabulary.word_id  # default
+        
+        if sort_order.lower() == "desc":
+            query = query.order_by(sort_column.desc())
+        else:
+            query = query.order_by(sort_column.asc())
+    
+    # Áp dụng phân trang và load vocabulary data
+    cycle_vocabulary = query.options(
+        joinedload(models.CycleVocabulary.vocabulary)
+    ).offset(skip).limit(limit).all()
+    
+    # Trả về kết quả kèm theo thông tin phân trang
+    return {
+        "items": cycle_vocabulary,
+        "total": total_count,
+        "page": skip // limit + 1 if limit > 0 else 1,
+        "pages": (total_count + limit - 1) // limit if limit > 0 else 1
+    }
 
-@router.put("/vocabulary/{word_id}", response_model=schemas.CycleVocabulary)
+@router.put("/vocabulary/{word_id}")
 def update_vocabulary_status(
     word_id: int,
     update: schemas.CycleVocabularyUpdate,
@@ -291,40 +390,147 @@ def update_vocabulary_status(
     if not cycle_vocab:
         raise HTTPException(status_code=404, detail="Vocabulary not found in cycle")
     
-    # Update status
-    cycle_vocab.status = update.status
-    
-    # If marked as learned, also update UserVocabulary
+    # If marked as learned, mark learned và xóa khỏi cycle
     if update.status == "learned":
+        # Mark learned
         user_vocab = db.query(models.UserVocabulary).filter(
             models.UserVocabulary.user_id == current_user.user_id,
             models.UserVocabulary.word_id == word_id
         ).first()
         
-        if user_vocab:
-            user_vocab.learned_at = datetime.now()
-        else:
+        if not user_vocab:
             user_vocab = models.UserVocabulary(
                 user_id=current_user.user_id,
-                word_id=word_id
+                word_id=word_id,
+                learned_at=datetime.now()
             )
             db.add(user_vocab)
-    
-    db.commit()
-    db.refresh(cycle_vocab)
-    
-    return cycle_vocab
+        else:
+            user_vocab.learned_at = datetime.now()
+        
+        # Xóa khỏi cycle
+        db.delete(cycle_vocab)
+        db.commit()
+        
+        # Return thông báo thay vì cycle_vocab (vì đã xóa)
+        return {
+            "message": "Vocabulary marked as learned and removed from cycle",
+            "word_id": word_id
+        }
+    else:
+        # Update status bình thường
+        cycle_vocab.status = update.status
+        db.commit()
+        db.refresh(cycle_vocab)
+        return cycle_vocab
 
-@router.post("/practice-results", response_model=schemas.PracticeResult)
-def submit_practice_results(
-    practice_data: schemas.VocabularyPractice,
+@router.delete("/vocabulary/{word_id}")
+def remove_vocabulary_from_cycle(
+    word_id: int,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(authentication.get_current_active_user)
+):
+    """Xóa từ vựng khỏi chu kỳ"""
+    cycle_vocab = db.query(models.CycleVocabulary).filter(
+        models.CycleVocabulary.user_id == current_user.user_id,
+        models.CycleVocabulary.word_id == word_id
+    ).first()
+    
+    if not cycle_vocab:
+        raise HTTPException(status_code=404, detail="Vocabulary not found in cycle")
+    
+    db.delete(cycle_vocab)
+    db.commit()
+    
+    return {"message": "Vocabulary removed from cycle successfully"}
+
+@router.get("/practice-set", response_model=List[schemas.VocabularyQuiz])
+def get_vocabulary_for_practice(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(authentication.get_current_active_user)
 ):
     """
-    Cập nhật kết quả kiểm tra cho nhiều từ vựng cùng lúc
+    Tạo bộ câu hỏi trắc nghiệm từ tất cả từ vựng trong chu kỳ
     """
-    # Lấy chu kỳ hiện tại
+    # Kiểm tra chu kỳ hiện tại
+    cycle = db.query(models.UserCycle).filter(
+        models.UserCycle.user_id == current_user.user_id
+    ).first()
+    
+    if not cycle:
+        raise HTTPException(status_code=404, detail="No active learning cycle found")
+    
+    # Lấy TẤT CẢ từ vựng trong chu kỳ
+    cycle_words = db.query(models.CycleVocabulary).join(
+        models.Vocabulary, models.CycleVocabulary.word_id == models.Vocabulary.word_id
+    ).filter(
+        models.CycleVocabulary.user_id == current_user.user_id
+    ).options(joinedload(models.CycleVocabulary.vocabulary)).all()
+    
+    if not cycle_words:
+        raise HTTPException(status_code=404, detail="No vocabulary found in cycle")
+    
+    # Lấy tất cả định nghĩa từ toàn bộ database để làm câu trả lời sai
+    all_definitions = db.query(models.Vocabulary.definition).all()
+    all_definitions = [def_tuple[0] for def_tuple in all_definitions]
+    
+    if len(all_definitions) < 4:
+        raise HTTPException(
+            status_code=400,
+            detail="Not enough vocabulary in database to create multiple choice questions"
+        )
+    
+    import random
+    
+    quiz_questions = []
+    
+    # Tạo câu hỏi cho TẤT CẢ từ trong cycle
+    for cycle_vocab in cycle_words:
+        vocab = cycle_vocab.vocabulary
+        correct_definition = vocab.definition
+        
+        # Lấy 3 định nghĩa sai từ toàn bộ database
+        wrong_definitions = [d for d in all_definitions if d != correct_definition]
+        
+        if len(wrong_definitions) < 3:
+            while len(wrong_definitions) < 3:
+                wrong_definitions.append(f"Định nghĩa không chính xác {len(wrong_definitions) + 1}")
+        
+        selected_wrong = random.sample(wrong_definitions, 3)
+        
+        # Tạo danh sách 4 lựa chọn
+        all_choices = [correct_definition] + selected_wrong
+        random.shuffle(all_choices)
+        correct_answer_index = all_choices.index(correct_definition)
+        
+        quiz_question = {
+            "word_id": vocab.word_id,
+            "word": vocab.word,
+            "pronunciation": vocab.pronunciation,
+            "example": vocab.example,
+            "level": vocab.level,
+            "topic": vocab.topic,
+            "status": cycle_vocab.status,
+            "choices": all_choices,
+            "correct_answer": correct_answer_index
+        }
+        
+        quiz_questions.append(quiz_question)
+    
+    # Xáo trộn thứ tự câu hỏi
+    random.shuffle(quiz_questions)
+    
+    return quiz_questions
+
+@router.post("/practice-results")
+def submit_practice_results(
+    practice_data: schemas.VocabularyPracticeQuiz,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(authentication.get_current_active_user)
+):
+    """
+    Cập nhật kết quả kiểm tra - xóa từ learned khỏi cycle
+    """
     current_cycle = db.query(models.UserCycle).filter(
         models.UserCycle.user_id == current_user.user_id
     ).first()
@@ -332,27 +538,20 @@ def submit_practice_results(
     if not current_cycle:
         raise HTTPException(status_code=404, detail="No active learning cycle found")
     
-    # Cập nhật trạng thái các từ vựng
-    total_words = len(practice_data.word_results)
-    learned_count = 0
-    pending_count = 0
+    learned_words = []
     
-    for result in practice_data.word_results:
-        # Tìm từ vựng trong chu kỳ
+    for result in practice_data.quiz_results:
         cycle_vocab = db.query(models.CycleVocabulary).filter(
             models.CycleVocabulary.user_id == current_user.user_id,
             models.CycleVocabulary.word_id == result.word_id
         ).first()
         
         if not cycle_vocab:
-            continue  # Bỏ qua nếu không tìm thấy
+            continue
         
-        # Cập nhật trạng thái
+        # Nếu trả lời đúng
         if result.is_correct:
-            cycle_vocab.status = "learned"
-            learned_count += 1
-            
-            # Thêm vào UserVocabulary nếu chưa có
+            # Mark-learned: Thêm vào UserVocabulary
             user_vocab = db.query(models.UserVocabulary).filter(
                 models.UserVocabulary.user_id == current_user.user_id,
                 models.UserVocabulary.word_id == result.word_id
@@ -367,94 +566,28 @@ def submit_practice_results(
                 db.add(user_vocab)
             else:
                 user_vocab.learned_at = datetime.now()
-        else:
-            # Từ trả lời sai vẫn giữ nguyên "pending"
-            pending_count += 1
+            
+            # XÓA khỏi cycle (thay vì chuyển thành learned)
+            db.delete(cycle_vocab)
+            learned_words.append(result.word_id)
     
     db.commit()
     
-    # Tính điểm số
-    score = int((learned_count / total_words) * 100) if total_words > 0 else 0
-    
     return {
-        "total_words": total_words,
-        "learned_words": learned_count,
-        "pending_words": pending_count,
-        "score": score
+        "message": "Practice results updated successfully",
+        "learned_words": learned_words,
+        "total_learned": len(learned_words)
     }
 
-@router.get("/practice-set", response_model=List[schemas.VocabularyForPractice])
-def get_vocabulary_for_practice(
-    count: int = 10,
-    db: Session = Depends(get_db),
-    current_user: models.User = Depends(authentication.get_current_active_user)
-):
-    """
-    Lấy danh sách từ vựng ngẫu nhiên từ chu kỳ hiện tại để kiểm tra
-    """
-    # Kiểm tra chu kỳ hiện tại
-    cycle = db.query(models.UserCycle).filter(
-        models.UserCycle.user_id == current_user.user_id
-    ).first()
-    
-    if not cycle:
-        raise HTTPException(status_code=404, detail="No active learning cycle found")
-    
-    # Lấy danh sách từ vựng chưa học (pending) - ưu tiên
-    query = db.query(models.CycleVocabulary).filter(
-        models.CycleVocabulary.user_id == current_user.user_id,
-        models.CycleVocabulary.status == "pending"
-    ).join(models.Vocabulary)
-    
-    # Sử dụng func.random() hoặc func.rand() tùy thuộc vào cơ sở dữ liệu
-    try:
-        pending_vocabs = query.order_by(func.random()).limit(count).all()
-    except:
-        # Nếu random() không hoạt động, thử rand() (MySQL)
-        pending_vocabs = query.order_by(func.rand()).limit(count).all()
-    
-    # Nếu không đủ số lượng, bổ sung bằng từ vựng đã học
-    if len(pending_vocabs) < count:
-        remaining = count - len(pending_vocabs)
-        
-        learned_query = db.query(models.CycleVocabulary).filter(
-            models.CycleVocabulary.user_id == current_user.user_id,
-            models.CycleVocabulary.status == "learned"
-        ).join(models.Vocabulary)
-        
-        try:
-            learned_vocabs = learned_query.order_by(func.random()).limit(remaining).all()
-        except:
-            learned_vocabs = learned_query.order_by(func.rand()).limit(remaining).all()
-        
-        practice_vocabs = pending_vocabs + learned_vocabs
-    else:
-        practice_vocabs = pending_vocabs
-    
-    result = []
-    for cv in practice_vocabs:
-        vocab = cv.vocabulary
-        result.append({
-            "word_id": vocab.word_id,
-            "word": vocab.word,
-            "definition": vocab.definition,
-            "example": vocab.example,
-            "level": vocab.level,
-            "topic": vocab.topic,
-            "pronunciation": vocab.pronunciation,
-            "status": cv.status
-        })
-    
-    return result
-
-@router.post("/end-current", response_model=schemas.UserCycle)
+@router.post("/end-current")
 def end_current_cycle(
     new_cycle_data: schemas.UserCycleCreate,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(authentication.get_current_active_user)
 ):
-    """Kết thúc chu kỳ hiện tại và tạo chu kỳ mới"""
-    # Lấy chu kỳ hiện tại
+    """
+    Kết thúc chu kỳ hiện tại và tạo chu kỳ mới - đơn giản
+    """
     current_cycle = db.query(models.UserCycle).filter(
         models.UserCycle.user_id == current_user.user_id
     ).first()
@@ -462,9 +595,13 @@ def end_current_cycle(
     if not current_cycle:
         raise HTTPException(status_code=404, detail="No active learning cycle found")
     
-    # Tính toán end_datetime cho chu kỳ mới
-    start_time = datetime.now()
+    # Đếm từ còn lại
+    remaining_words = db.query(models.CycleVocabulary).filter(
+        models.CycleVocabulary.user_id == current_user.user_id
+    ).count()
     
+    # Tính thời gian mới
+    start_time = datetime.now()
     if new_cycle_data.duration:
         duration_delta = timedelta(
             days=new_cycle_data.duration.days,
@@ -473,29 +610,17 @@ def end_current_cycle(
             seconds=new_cycle_data.duration.seconds
         )
         end_datetime = start_time + duration_delta
-    elif new_cycle_data.end_datetime:
-        end_datetime = new_cycle_data.end_datetime
     else:
-        # Mặc định 7 ngày
         end_datetime = start_time + timedelta(days=7)
     
-    # Đếm số từ vựng chưa thuộc
-    pending_count = db.query(models.CycleVocabulary).filter(
-        models.CycleVocabulary.user_id == current_user.user_id,
-        models.CycleVocabulary.status == "pending"
-    ).count()
+    # Cập nhật thời gian chu kỳ
+    current_cycle.start_datetime = start_time
+    current_cycle.end_datetime = end_datetime
     
-    # Tạo chu kỳ mới
-    new_cycle = models.UserCycle(
-        user_id=current_user.user_id,
-        start_datetime=start_time,
-        end_datetime=end_datetime
-    )
-    
-    # Xóa chu kỳ cũ và thêm chu kỳ mới
-    db.delete(current_cycle)
-    db.add(new_cycle)
     db.commit()
-    db.refresh(new_cycle)
     
-    return new_cycle
+    return {
+        "message": "Cycle renewed successfully",
+        "remaining_words": remaining_words,
+        "new_end_time": end_datetime
+    }
