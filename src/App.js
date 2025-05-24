@@ -6,7 +6,7 @@ import ProtectedRoute from "./components/layout/ProtectedRoute";
 import HomePage from "./pages/home";
 import DictionaryPage from "./pages/dictionary";
 import VocabularyPage from "./pages/vocabulary";
-import VocabularyLevelPage from "./pages/vocabulary-level";
+// import VocabularyLevelPage from "./pages/vocabulary-level";
 import ConversationPage from "./pages/conversation";
 import AccountPage from "./pages/account";
 import AdminPage from "./pages/admin";
@@ -49,11 +49,11 @@ function App() {
               <VocabularyPage />
             </ProtectedRoute>
           } />
-          <Route path="/tu-vung/:level" element={
+          {/* <Route path="/tu-vung/:level" element={
             <ProtectedRoute>
               <VocabularyLevelPage />
             </ProtectedRoute>
-          } />
+          } /> */}
           
           {/* Flashcard route */}
           <Route path="/luyen-tap" element={

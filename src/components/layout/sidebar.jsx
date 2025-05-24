@@ -76,20 +76,6 @@ export default function Sidebar() {
             <span>Bạn đã học: {learnedWordsCount} từ</span>
           </button>
         </div>
-
-        <div className="flex items-center justify-between">
-          <div className="flex items-center">
-            <Sun className="w-5 h-5 text-yellow-500 mr-1" />
-            <span className="font-bold">{user?.streakDays || 0}</span>
-          </div>
-          <div className="flex items-center">
-            <Flame className="w-5 h-5 text-black mr-1" />
-            <span className="font-bold">{user?.points || 0}</span>
-          </div>
-          <div>
-            <Bell className="w-5 h-5 text-black" />
-          </div>
-        </div>
       </div>
 
       {/* Navigation Card */}

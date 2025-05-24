@@ -1,7 +1,7 @@
 #schemas.py
 from pydantic import BaseModel, EmailStr, Field
-from typing import List, Optional
-from datetime import datetime, date
+from typing import List, Optional, Dict
+from datetime import datetime, date 
 from enum import Enum
 
 # Enums
@@ -88,8 +88,16 @@ class Vocabulary(VocabularyBase):
 class UserCycleBase(BaseModel):
     end_datetime: datetime
 
-class UserCycleCreate(UserCycleBase):
-    pass
+class UserCycleCreateWithDuration(BaseModel):
+    days: int = 0
+    hours: int = 0
+    minutes: int = 0
+    seconds: int = 0
+
+class UserCycleCreate(BaseModel):
+    end_datetime: Optional[datetime] = None  # Giữ lại cho backward compatibility
+    duration: Optional[UserCycleCreateWithDuration] = None  # Thêm option mới
+
 
 class UserCycle(UserCycleBase):
     user_id: int
@@ -175,11 +183,13 @@ class AdminVocabAction(BaseModel):
     action_id: int
     admin_id: int
     action_type: str
-    word_id: int
+    word_id: Optional[int] = None
+    word_name: Optional[str] = None  # Thêm dòng này
     action_time: datetime
 
     class Config:
         orm_mode = True
+
 
 class AdminUserAction(BaseModel):
     action_id: int
@@ -230,3 +240,23 @@ class ImportResult(BaseModel):
     duplicate_count: int
     error_count: int
     error_details: List[str]
+
+class PaginatedVocabulary(BaseModel):
+    """Schema cho kết quả từ vựng có phân trang"""
+    items: List[Vocabulary]
+    total: int
+    page: int
+    pages: int
+    
+    class Config:
+        orm_mode = True
+
+class VocabularyStatistics(BaseModel):
+    total_count: int
+    learned_count: int
+    remaining_count: int
+    level_distribution: Dict[str, int]
+    topic_distribution: Dict[str, int]
+    
+    class Config:
+        orm_mode = True

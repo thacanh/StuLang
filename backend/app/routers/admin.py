@@ -155,7 +155,7 @@ def change_user_role(
     db.commit()
     return {"message": f"User role changed to {role}"}
 
-# === THÊM CÁC CHỨC NĂNG VOCABULARY ===
+# === VOCABULARY MANAGEMENT ===
 
 @router.post("/vocabulary", response_model=schemas.Vocabulary)
 def create_vocabulary(
@@ -178,7 +178,8 @@ def create_vocabulary(
     admin_action = models.AdminVocabAction(
         admin_id=current_user.user_id,
         action_type="add_vocab",
-        word_id=db_vocabulary.word_id
+        word_id=db_vocabulary.word_id,
+        word_name=db_vocabulary.word
     )
     db.add(admin_action)
     db.commit()
@@ -204,7 +205,8 @@ def update_vocabulary(
     admin_action = models.AdminVocabAction(
         admin_id=current_user.user_id,
         action_type="edit_vocab",
-        word_id=word_id
+        word_id=word_id,
+        word_name=db_vocabulary.word
     )
     db.add(admin_action)
     
@@ -222,11 +224,12 @@ def delete_vocabulary(
     if db_vocabulary is None:
         raise HTTPException(status_code=404, detail="Vocabulary not found")
     
-    # Log admin action before deleting
+    # Log admin action TRƯỚC KHI xóa
     admin_action = models.AdminVocabAction(
         admin_id=current_user.user_id,
         action_type="delete_vocab",
-        word_id=word_id
+        word_id=word_id,
+        word_name=db_vocabulary.word
     )
     db.add(admin_action)
     db.commit()
@@ -236,6 +239,8 @@ def delete_vocabulary(
     db.commit()
     
     return None
+
+# === ACTION HISTORY ===
 
 @router.get("/actions/users", response_model=List[schemas.AdminUserAction])
 def get_user_actions(
@@ -263,18 +268,35 @@ def get_vocabulary_actions(
     
     return actions
 
+@router.get("/actions/vocabulary/{action_type}")
+def get_vocabulary_actions_by_type(
+    action_type: str,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(authentication.get_current_admin_user)
+):
+    """Lấy lịch sử hành động theo loại (add_vocab, edit_vocab, delete_vocab)"""
+    if action_type not in ['add_vocab', 'edit_vocab', 'delete_vocab']:
+        raise HTTPException(status_code=400, detail="Invalid action type")
+    
+    actions = db.query(models.AdminVocabAction).filter(
+        models.AdminVocabAction.action_type == action_type
+    ).order_by(
+        models.AdminVocabAction.action_time.desc()
+    ).offset(skip).limit(limit).all()
+    
+    return actions
+
+# === EXCEL IMPORT ===
+
 @router.post("/vocabulary/import-excel", response_model=schemas.ImportResult)
 async def import_vocabulary_from_excel(
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: models.User = Depends(authentication.get_current_admin_user)
 ):
-    """
-    Nhập từ vựng từ file Excel
-    
-    File Excel phải có các cột: word, definition, example, level, topic
-    Các cột không bắt buộc: pronunciation, audio_url, synonyms
-    """
+    """Nhập từ vựng từ file Excel"""
     # Kiểm tra định dạng file
     if not file.filename.endswith(('.xlsx', '.xls')):
         raise HTTPException(
@@ -302,8 +324,24 @@ async def import_vocabulary_from_excel(
         if len(invalid_levels) > 0:
             raise HTTPException(
                 status_code=400,
-                detail=f"Giá trị level không hợp lệ: {', '.join(map(str, invalid_levels))}. Giá trị hợp lệ: {', '.join(valid_levels)}"
+                detail=f"Giá trị level không hợp lệ: {', '.join(map(str, invalid_levels))}"
             )
+        
+        # Kiểm tra giá trị part_of_speech hợp lệ (nếu có)
+        valid_parts_of_speech = [
+            'noun', 'verb', 'adjective', 'adverb', 
+            'pronoun', 'preposition', 'conjunction', 'interjection'
+        ]
+        if 'part_of_speech' in df.columns:
+            invalid_pos = df[
+                (~df['part_of_speech'].isin(valid_parts_of_speech)) & 
+                (~df['part_of_speech'].isna())
+            ]['part_of_speech'].unique()
+            if len(invalid_pos) > 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Giá trị part_of_speech không hợp lệ: {', '.join(map(str, invalid_pos))}. Giá trị hợp lệ: {', '.join(valid_parts_of_speech)}"
+                )
         
         # Thêm từ vựng vào cơ sở dữ liệu
         success_count = 0
@@ -322,16 +360,17 @@ async def import_vocabulary_from_excel(
                     duplicate_count += 1
                     continue
                 
-                # Chuẩn bị dữ liệu
+                # Chuẩn bị dữ liệu với các trường bắt buộc
                 vocab_data = {
                     'word': row['word'],
                     'definition': row['definition'],
                     'level': row['level'],
                     'topic': row['topic'],
+                    'part_of_speech': 'noun'  # Giá trị mặc định
                 }
                 
                 # Thêm các trường không bắt buộc nếu có
-                optional_fields = ['example', 'pronunciation', 'audio_url', 'synonyms']
+                optional_fields = ['example', 'pronunciation', 'audio_url', 'synonyms', 'part_of_speech']
                 for field in optional_fields:
                     if field in df.columns and not pd.isna(row[field]):
                         vocab_data[field] = row[field]
@@ -345,7 +384,8 @@ async def import_vocabulary_from_excel(
                 admin_action = models.AdminVocabAction(
                     admin_id=current_user.user_id,
                     action_type="add_vocab",
-                    word_id=new_vocab.word_id
+                    word_id=new_vocab.word_id,
+                    word_name=new_vocab.word
                 )
                 db.add(admin_action)
                 
@@ -368,29 +408,43 @@ async def import_vocabulary_from_excel(
         }
         
     except Exception as e:
-        # Xử lý lỗi tổng thể
         raise HTTPException(
             status_code=500,
             detail=f"Lỗi khi xử lý file Excel: {str(e)}"
         )
-        
+
+
 @router.get("/vocabulary/excel-template")
 def get_excel_template(
     current_user: models.User = Depends(authentication.get_current_admin_user)
 ):
-    """
-    Tải về file Excel mẫu để nhập từ vựng
-    """
+    """Tải về file Excel mẫu để nhập từ vựng"""
     # Tạo DataFrame mẫu
     sample_data = {
-        'word': ['example', 'vocabulary', 'import'],
-        'definition': ['a thing characteristic of its kind', 'the body of words used in a language', 'bring goods into a country'],
-        'example': ['This is an example sentence.', 'He has a wide vocabulary.', 'The country imports oil.'],
-        'level': ['a1', 'b1', 'b2'],
-        'topic': ['general', 'education', 'business'],
-        'pronunciation': ['/ɪɡˈzɑːmpl/', '/vəʊˈkæbjʊləri/', '/ˈɪmpɔːt/'],
-        'audio_url': ['', '', ''],
-        'synonyms': ['instance, case', 'terminology, lexicon', 'bring in, introduce']
+        'word': ['example', 'vocabulary', 'import', 'beautiful'],
+        'definition': [
+            'a thing characteristic of its kind', 
+            'the body of words used in a language', 
+            'bring goods into a country',
+            'pleasing the senses or mind aesthetically'
+        ],
+        'example': [
+            'This is an example sentence.', 
+            'He has a wide vocabulary.', 
+            'The country imports oil.',
+            'She has beautiful eyes.'
+        ],
+        'level': ['a1', 'b1', 'b2', 'a2'],
+        'topic': ['general', 'education', 'business', 'appearance'],
+        'part_of_speech': ['noun', 'noun', 'verb', 'adjective'],  # ← Thêm cột này
+        'pronunciation': ['/ɪɡˈzɑːmpl/', '/vəʊˈkæbjʊləri/', '/ˈɪmpɔːt/', '/ˈbjuːtɪfl/'],
+        'audio_url': ['', '', '', ''],
+        'synonyms': [
+            'instance, case', 
+            'terminology, lexicon', 
+            'bring in, introduce',
+            'lovely, attractive, gorgeous'
+        ]
     }
     
     df = pd.DataFrame(sample_data)
@@ -402,17 +456,28 @@ def get_excel_template(
         
         # Thêm sheet hướng dẫn
         instructions = pd.DataFrame({
-            'Column': ['word', 'definition', 'example', 'level', 'topic', 'pronunciation', 'audio_url', 'synonyms'],
-            'Required': ['Yes', 'Yes', 'No', 'Yes', 'Yes', 'No', 'No', 'No'],
+            'Column': [
+                'word', 'definition', 'example', 'level', 'topic', 
+                'part_of_speech', 'pronunciation', 'audio_url', 'synonyms'
+            ],
+            'Required': [
+                'Yes', 'Yes', 'No', 'Yes', 'Yes', 
+                'No', 'No', 'No', 'No'
+            ],
             'Description': [
                 'Từ vựng cần thêm',
                 'Định nghĩa của từ',
                 'Ví dụ sử dụng từ',
                 'Cấp độ (a1, a2, b1, b2, c1, c2)',
                 'Chủ đề của từ',
+                'Loại từ (noun, verb, adjective, adverb, pronoun, preposition, conjunction, interjection)',
                 'Phát âm (IPA)',
                 'Đường dẫn đến file âm thanh',
                 'Các từ đồng nghĩa, phân cách bằng dấu phẩy'
+            ],
+            'Default': [
+                '', '', '', '', '', 
+                'noun', '', '', ''
             ]
         })
         instructions.to_excel(writer, index=False, sheet_name='Instructions')

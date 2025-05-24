@@ -91,8 +91,13 @@ class AdminVocabAction(Base):
     action_id = Column(Integer, primary_key=True, index=True)
     admin_id = Column(Integer, ForeignKey("Users.user_id", ondelete="CASCADE"), nullable=False)
     action_type = Column(Enum('add_vocab', 'edit_vocab', 'delete_vocab', name='vocab_action_type'), nullable=False)
-    word_id = Column(Integer, ForeignKey("Vocabulary.word_id", ondelete="CASCADE"), nullable=False)
+    word_id = Column(Integer, nullable=True)  # Không có foreign key constraint
+    word_name = Column(String(100), nullable=True)  # Thêm cột này
     action_time = Column(DateTime, default=datetime.now)
+    
+    # Relationship
+    admin = relationship("User", foreign_keys=[admin_id])
+
 
 class AdminUserAction(Base):
     __tablename__ = "AdminUserActions"

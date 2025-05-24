@@ -1,11 +1,9 @@
-#router/cycles.py
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import List
+from typing import List, Optional
 from datetime import datetime, timedelta
 from sqlalchemy.orm import joinedload
 from sqlalchemy import func
-
 
 from .. import models, schemas, authentication
 from ..database import get_db
@@ -22,6 +20,32 @@ def create_cycle(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(authentication.get_current_active_user)
 ):
+    # Tính toán end_datetime
+    start_time = datetime.now()
+    
+    if cycle.duration:
+        # Sử dụng duration để tính end_datetime
+        duration_delta = timedelta(
+            days=cycle.duration.days,
+            hours=cycle.duration.hours,
+            minutes=cycle.duration.minutes,
+            seconds=cycle.duration.seconds
+        )
+        end_datetime = start_time + duration_delta
+    elif cycle.end_datetime:
+        # Sử dụng end_datetime trực tiếp (backward compatibility)
+        end_datetime = cycle.end_datetime
+    else:
+        # Mặc định 7 ngày nếu không có thông tin
+        end_datetime = start_time + timedelta(days=7)
+    
+    # Kiểm tra end_datetime phải sau start_time
+    if end_datetime <= start_time:
+        raise HTTPException(
+            status_code=400,
+            detail="End time must be after start time"
+        )
+    
     # Check if user already has a cycle
     existing_cycle = db.query(models.UserCycle).filter(
         models.UserCycle.user_id == current_user.user_id
@@ -29,8 +53,8 @@ def create_cycle(
     
     if existing_cycle:
         # Update existing cycle
-        existing_cycle.start_datetime = datetime.now()
-        existing_cycle.end_datetime = cycle.end_datetime
+        existing_cycle.start_datetime = start_time
+        existing_cycle.end_datetime = end_datetime
         db.commit()
         db.refresh(existing_cycle)
         return existing_cycle
@@ -38,8 +62,82 @@ def create_cycle(
     # Create new cycle
     db_cycle = models.UserCycle(
         user_id=current_user.user_id,
-        start_datetime=datetime.now(),
-        end_datetime=cycle.end_datetime
+        start_datetime=start_time,
+        end_datetime=end_datetime
+    )
+    db.add(db_cycle)
+    db.commit()
+    db.refresh(db_cycle)
+    
+    return db_cycle
+
+@router.post("/quick-create", response_model=schemas.UserCycle)
+def create_quick_cycle(
+    days: int = 0,      
+    hours: int = 0,     
+    minutes: int = 0,   
+    seconds: int = 0,   
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(authentication.get_current_active_user)
+):
+    """
+    Tạo chu kỳ học với thời gian do người dùng nhập
+    
+    Args:
+        days: Số ngày (bắt buộc nhập)
+        hours: Số giờ (bắt buộc nhập)
+        minutes: Số phút (bắt buộc nhập)
+        seconds: Số giây (bắt buộc nhập)
+    """
+    # Validate input
+    if days < 0 or hours < 0 or minutes < 0 or seconds < 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Time values must be non-negative"
+        )
+    
+    # Validate giờ, phút, giây không vượt quá giới hạn
+    if hours > 23:
+        raise HTTPException(
+            status_code=400,
+            detail="Hours must be between 0-23"
+        )
+    
+    if minutes > 59:
+        raise HTTPException(
+            status_code=400,
+            detail="Minutes must be between 0-59"
+        )
+    
+    if seconds > 59:
+        raise HTTPException(
+            status_code=400,
+            detail="Seconds must be between 0-59"
+        )
+    
+    # Tính toán thời gian
+    start_time = datetime.now()
+    duration = timedelta(days=days, hours=hours, minutes=minutes, seconds=seconds)
+    end_datetime = start_time + duration
+    
+    # Check if user already has a cycle
+    existing_cycle = db.query(models.UserCycle).filter(
+        models.UserCycle.user_id == current_user.user_id
+    ).first()
+    
+    if existing_cycle:
+        # Update existing cycle
+        existing_cycle.start_datetime = start_time
+        existing_cycle.end_datetime = end_datetime
+        db.commit()
+        db.refresh(existing_cycle)
+        return existing_cycle
+    
+    # Create new cycle
+    db_cycle = models.UserCycle(
+        user_id=current_user.user_id,
+        start_datetime=start_time,
+        end_datetime=end_datetime
     )
     db.add(db_cycle)
     db.commit()
@@ -60,6 +158,50 @@ def get_user_cycle(
         raise HTTPException(status_code=404, detail="No learning cycle found")
     
     return cycle
+
+@router.get("/time-remaining")
+def get_cycle_time_remaining(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(authentication.get_current_active_user)
+):
+    """Xem thời gian còn lại của chu kỳ hiện tại"""
+    cycle = db.query(models.UserCycle).filter(
+        models.UserCycle.user_id == current_user.user_id
+    ).first()
+    
+    if not cycle:
+        raise HTTPException(status_code=404, detail="No learning cycle found")
+    
+    now = datetime.now()
+    
+    if cycle.end_datetime <= now:
+        return {
+            "status": "expired",
+            "message": "Chu kỳ học đã kết thúc",
+            "expired_since": str(now - cycle.end_datetime)
+        }
+    
+    time_remaining = cycle.end_datetime - now
+    
+    # Tính toán thời gian còn lại
+    days = time_remaining.days
+    hours, remainder = divmod(time_remaining.seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    
+    return {
+        "status": "active",
+        "start_datetime": cycle.start_datetime,
+        "end_datetime": cycle.end_datetime,
+        "time_remaining": {
+            "days": days,
+            "hours": hours,
+            "minutes": minutes,
+            "seconds": seconds,
+            "total_seconds": int(time_remaining.total_seconds())
+        },
+        "progress_percentage": int(((now - cycle.start_datetime).total_seconds() / 
+                                  (cycle.end_datetime - cycle.start_datetime).total_seconds()) * 100)
+    }
 
 @router.post("/vocabulary", response_model=schemas.CycleVocabulary)
 def add_vocabulary_to_cycle(
@@ -172,7 +314,8 @@ def update_vocabulary_status(
     db.refresh(cycle_vocab)
     
     return cycle_vocab
-@router.post("/cycles/practice-results", response_model=schemas.PracticeResult)
+
+@router.post("/practice-results", response_model=schemas.PracticeResult)
 def submit_practice_results(
     practice_data: schemas.VocabularyPractice,
     db: Session = Depends(get_db),
@@ -239,7 +382,8 @@ def submit_practice_results(
         "pending_words": pending_count,
         "score": score
     }
-@router.get("/cycles/practice-set", response_model=List[schemas.VocabularyForPractice])
+
+@router.get("/practice-set", response_model=List[schemas.VocabularyForPractice])
 def get_vocabulary_for_practice(
     count: int = 10,
     db: Session = Depends(get_db),
@@ -302,15 +446,14 @@ def get_vocabulary_for_practice(
         })
     
     return result
-@router.post("/cycles/end-current", response_model=schemas.UserCycle)
+
+@router.post("/end-current", response_model=schemas.UserCycle)
 def end_current_cycle(
     new_cycle_data: schemas.UserCycleCreate,
     db: Session = Depends(get_db),
     current_user: models.User = Depends(authentication.get_current_active_user)
 ):
-    """
-    Kết thúc chu kỳ hiện tại và tạo chu kỳ mới với các từ chưa thuộc
-    """
+    """Kết thúc chu kỳ hiện tại và tạo chu kỳ mới"""
     # Lấy chu kỳ hiện tại
     current_cycle = db.query(models.UserCycle).filter(
         models.UserCycle.user_id == current_user.user_id
@@ -318,6 +461,23 @@ def end_current_cycle(
     
     if not current_cycle:
         raise HTTPException(status_code=404, detail="No active learning cycle found")
+    
+    # Tính toán end_datetime cho chu kỳ mới
+    start_time = datetime.now()
+    
+    if new_cycle_data.duration:
+        duration_delta = timedelta(
+            days=new_cycle_data.duration.days,
+            hours=new_cycle_data.duration.hours,
+            minutes=new_cycle_data.duration.minutes,
+            seconds=new_cycle_data.duration.seconds
+        )
+        end_datetime = start_time + duration_delta
+    elif new_cycle_data.end_datetime:
+        end_datetime = new_cycle_data.end_datetime
+    else:
+        # Mặc định 7 ngày
+        end_datetime = start_time + timedelta(days=7)
     
     # Đếm số từ vựng chưa thuộc
     pending_count = db.query(models.CycleVocabulary).filter(
@@ -328,8 +488,8 @@ def end_current_cycle(
     # Tạo chu kỳ mới
     new_cycle = models.UserCycle(
         user_id=current_user.user_id,
-        start_datetime=datetime.now(),
-        end_datetime=new_cycle_data.end_datetime
+        start_datetime=start_time,
+        end_datetime=end_datetime
     )
     
     # Xóa chu kỳ cũ và thêm chu kỳ mới
@@ -338,12 +498,4 @@ def end_current_cycle(
     db.commit()
     db.refresh(new_cycle)
     
-    # Thêm thông tin về số từ đã chuyển vào response
-    response_data = {
-        "user_id": new_cycle.user_id,
-        "start_datetime": new_cycle.start_datetime,
-        "end_datetime": new_cycle.end_datetime,
-        "pending_words_carried": pending_count
-    }
-    
-    return response_data
+    return new_cycle
